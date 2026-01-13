@@ -108,27 +108,65 @@ class ServeurBlokus:
                     if j.joueur_actuel == 0:
                         self.nombre_tours += 1
 
+def trouver_meilleure_ip():
+    """Tente de trouver l'IP du réseau local (Wi-Fi)"""
+    liste_ips = []
+    
+    # Méthode 1 : Via le nom d'hôte (Spécial Mac : ajout de .local)
+    try:
+        hostname = socket.gethostname()
+        if not hostname.endswith(".local"):
+            hostname += ".local"
+        ips = socket.gethostbyname_ex(hostname)[2]
+        liste_ips.extend(ips)
+    except:
+        pass
+
+    # Méthode 2 : Connexion UDP factice (Fallback)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 1))
+        liste_ips.append(s.getsockname()[0])
+        s.close()
+    except:
+        pass
+
+    # Filtrage : On cherche en priorité 192.168.x.x
+    ip_finale = "127.0.0.1"
+    
+    # On enlève les doublons
+    liste_ips = list(set(liste_ips))
+    
+    # 1. Priorité absolue aux 192.168...
+    for ip in liste_ips:
+        if ip.startswith("192.168."):
+            return ip
+            
+    # 2. Sinon une IP en 10... ou 172... (mais pas 100.)
+    for ip in liste_ips:
+        if (ip.startswith("10.") and not ip.startswith("100.")) or ip.startswith("172."):
+            return ip
+            
+    # 3. Sinon on prend la première qui n'est pas localhost
+    for ip in liste_ips:
+        if not ip.startswith("127.") and not ip.startswith("100."):
+            return ip
+            
+    return ip_finale
+
 async def main():
     srv = ServeurBlokus()
     
-    # Récupération de l'IP Locale pour l'affichage
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # Astuce pour trouver la vraie IP utilisée vers l'extérieur
-        s.connect(('10.255.255.255', 1))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = '127.0.0.1'
-    finally:
-        s.close()
+    # Détection automatique de la bonne IP
+    IP = trouver_meilleure_ip()
 
-    # On écoute sur 0.0.0.0 (toutes les interfaces)
+    # On écoute sur 0.0.0.0
     server = await asyncio.start_server(srv.handle_client, '0.0.0.0', 8888)
     
     print("==================================================")
     print(f"SERVEUR BLOKUS DÉMARRÉ")
-    print(f"IP pour les autres joueurs : {IP}")
-    print(f"(Le jeu démarrera 10s après la 2ème connexion)")
+    print(f"✅ IP À DONNER AUX JOUEURS : {IP}")
+    print(f"(Si ça échoue, essayez les autres IPs trouvées)")
     print("==================================================")
     
     async with server:
